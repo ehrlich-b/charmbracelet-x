@@ -310,6 +310,22 @@ func (s *Screen) DeleteLine(n int) bool {
 		return false
 	}
 
+	// Capture lines scrolling off the top before they are destroyed.
+	// Only fires when the cursor is at the top of the scroll region, which is
+	// always true for ScrollUp (cursor is moved there first) but not for
+	// mid-screen CSI M deletes.
+	if s.cb.ScrollOut != nil && y == scroll.Min.Y {
+		count := min(n, scroll.Max.Y-y)
+		lines := make([]uv.Line, count)
+		for i := range count {
+			src := s.buf.Line(y + i)
+			dst := make(uv.Line, len(src))
+			copy(dst, src)
+			lines[i] = dst
+		}
+		s.cb.ScrollOut(lines)
+	}
+
 	s.buf.DeleteLineArea(y, n, s.blankCell(), scroll)
 
 	return true

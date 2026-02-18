@@ -1,6 +1,8 @@
 package vt
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	uv "github.com/charmbracelet/ultraviolet"
@@ -1807,6 +1809,149 @@ func TestTerminal(t *testing.T) {
 				t.Errorf("cursor position doesn't match: want %v, got %v", tt.pos, pos)
 			}
 		})
+	}
+}
+
+func TestScrollOutCallback(t *testing.T) {
+	var captured []string
+	emu := newTestTerminal(t, 80, 3)
+	emu.SetCallbacks(Callbacks{
+		ScrollOut: func(lines []uv.Line) {
+			for _, l := range lines {
+				captured = append(captured, l.String())
+			}
+		},
+	})
+
+	// Fill 3-row screen then write one more line to trigger scroll.
+	emu.WriteString("line1\r\nline2\r\nline3\r\nline4\r\n")
+
+	if len(captured) < 1 || !strings.Contains(captured[0], "line1") {
+		t.Errorf("expected line1 in scrollback, got %v", captured)
+	}
+}
+
+func TestScrollOutMultipleLines(t *testing.T) {
+	var captured []string
+	emu := newTestTerminal(t, 80, 3)
+	emu.SetCallbacks(Callbacks{
+		ScrollOut: func(lines []uv.Line) {
+			for _, l := range lines {
+				captured = append(captured, l.String())
+			}
+		},
+	})
+
+	for i := 1; i <= 10; i++ {
+		emu.WriteString(fmt.Sprintf("line%d\r\n", i))
+	}
+
+	if len(captured) < 7 {
+		t.Errorf("expected at least 7 scrolled lines, got %d", len(captured))
+	}
+}
+
+func TestScrollOutPreservesStyles(t *testing.T) {
+	var captured []string
+	emu := newTestTerminal(t, 80, 2)
+	emu.SetCallbacks(Callbacks{
+		ScrollOut: func(lines []uv.Line) {
+			for _, l := range lines {
+				captured = append(captured, l.Render())
+			}
+		},
+	})
+
+	// Write a bold red line then scroll it off.
+	emu.WriteString("\x1b[1;31mhello\x1b[0m\r\nsecond\r\nthird\r\n")
+
+	if len(captured) < 1 {
+		t.Fatal("no lines captured")
+	}
+	if !strings.Contains(captured[0], "hello") {
+		t.Errorf("expected 'hello' in captured line, got %q", captured[0])
+	}
+}
+
+func TestScrollbackClearOnED3(t *testing.T) {
+	cleared := false
+	emu := newTestTerminal(t, 80, 24)
+	emu.SetCallbacks(Callbacks{
+		ScrollbackClear: func() {
+			cleared = true
+		},
+	})
+
+	emu.WriteString("\x1b[3J")
+	if !cleared {
+		t.Error("ScrollbackClear not called on ESC[3J")
+	}
+}
+
+func TestScrollbackClearOnRIS(t *testing.T) {
+	cleared := false
+	emu := newTestTerminal(t, 80, 24)
+	emu.SetCallbacks(Callbacks{
+		ScrollbackClear: func() {
+			cleared = true
+		},
+	})
+
+	emu.WriteString("\x1bc")
+	if !cleared {
+		t.Error("ScrollbackClear not called on ESC c")
+	}
+}
+
+func TestED2DoesNotClearScrollback(t *testing.T) {
+	cleared := false
+	emu := newTestTerminal(t, 80, 24)
+	emu.SetCallbacks(Callbacks{
+		ScrollbackClear: func() {
+			cleared = true
+		},
+	})
+
+	emu.WriteString("\x1b[2J")
+	if cleared {
+		t.Error("ScrollbackClear should not fire on ESC[2J")
+	}
+}
+
+func TestDeleteLineMidScreenNoScrollOut(t *testing.T) {
+	var captured int
+	emu := newTestTerminal(t, 80, 10)
+	emu.SetCallbacks(Callbacks{
+		ScrollOut: func(lines []uv.Line) {
+			captured += len(lines)
+		},
+	})
+
+	// Move cursor to row 5, delete a line.
+	emu.WriteString("\x1b[5;1H\x1b[M")
+
+	if captured != 0 {
+		t.Errorf("ScrollOut should not fire for mid-screen DL, got %d lines", captured)
+	}
+}
+
+func TestCSISScrollUpFiresScrollOut(t *testing.T) {
+	var captured int
+	emu := newTestTerminal(t, 80, 5)
+	emu.SetCallbacks(Callbacks{
+		ScrollOut: func(lines []uv.Line) {
+			captured += len(lines)
+		},
+	})
+
+	// Fill screen.
+	emu.WriteString("line1\r\nline2\r\nline3\r\nline4\r\nline5")
+
+	// CSI 2 S — scroll up 2 lines.
+	emu.WriteString("\x1b[2S")
+
+	if captured != 2 {
+		t.Errorf("expected 2 lines captured from CSI 2S, got %d", captured)
 	}
 }
 

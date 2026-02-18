@@ -60,4 +60,16 @@ type Callbacks struct {
 	// DisableMode callback. When set, this function is called when a mode is
 	// disabled.
 	DisableMode func(mode ansi.Mode)
+
+	// ScrollOut is called when lines scroll off the top of the scroll region.
+	// Provides the line data BEFORE destruction. Only fires when the cursor is
+	// at the top of the scroll region (i.e. during ScrollUp and CSI S, but not
+	// mid-screen CSI M). The caller can render these lines (via Line.Render())
+	// for scrollback storage. Callers that only want main-screen scrollback
+	// should check [Emulator.IsAltScreen] and ignore while in alt screen.
+	ScrollOut func(lines []uv.Line)
+
+	// ScrollbackClear is called when the terminal requests scrollback erasure.
+	// Fired on ESC[3J (Erase Scrollback) and ESC c (Full Reset / RIS).
+	ScrollbackClear func()
 }
